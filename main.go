@@ -13,6 +13,7 @@ import (
 )
 
 var logFilePath = flag.String("path", "/var/log/cloud-init-output.log", "Path to the log file")
+var serviceMode = flag.Bool("service", false, "Don't show absolute timestamps in service mode because journalctl already provides absolute timestamp")
 
 type FileState struct {
 	LastPos   int64
@@ -22,21 +23,24 @@ type FileState struct {
 
 type CustomLogger struct {
 	*log.Logger
-	StartTime time.Time
+	StartTime   time.Time
+	ServiceMode bool
 }
 
 func (cl *CustomLogger) Output(calldepth int, s string) error {
-	now := time.Now()
-	relativeTime := now.Sub(cl.StartTime).Round(time.Second)
-	timestamp := now.Format("2006/01/02 15:04:05")
-	s = fmt.Sprintf("%s [%s] %s", timestamp, relativeTime, s)
+	relativeTime := time.Since(cl.StartTime).Round(time.Second)
+	s = fmt.Sprintf("[%s] %s", relativeTime, s)
 	return cl.Logger.Output(calldepth+1, s)
 }
 
-func NewCustomLogger(out io.Writer, flag int, startTime time.Time) *CustomLogger {
+func NewCustomLogger(out io.Writer, flag int, startTime time.Time, serviceMode bool) *CustomLogger {
+	if serviceMode {
+		flag = log.Lshortfile
+	}
 	return &CustomLogger{
-		Logger:    log.New(out, "", flag),
-		StartTime: startTime,
+		Logger:      log.New(out, "", flag),
+		StartTime:   startTime,
+		ServiceMode: serviceMode,
 	}
 }
 
@@ -99,7 +103,7 @@ func main() {
 	fileState := &FileState{
 		StartTime: startTime,
 	}
-	logger := NewCustomLogger(os.Stdout, log.LstdFlags|log.Lshortfile, startTime)
+	logger := NewCustomLogger(os.Stdout, log.LstdFlags|log.Lshortfile, startTime, *serviceMode)
 	go func() {
 		for range ticker.C {
 			fileState.MonitorFile(*logFilePath, logger)
