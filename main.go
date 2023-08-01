@@ -25,10 +25,12 @@ type CustomLogger struct {
 	StartTime time.Time
 }
 
-func (cl *CustomLogger) Printf(format string, v ...interface{}) {
-	relativeTime := time.Since(cl.StartTime).Round(time.Second)
-	newFormat := fmt.Sprintf("%s - %s", relativeTime, format)
-	cl.Logger.Printf(newFormat, v...)
+func (cl *CustomLogger) Output(calldepth int, s string) error {
+	now := time.Now()
+	relativeTime := now.Sub(cl.StartTime).Round(time.Second)
+	timestamp := now.Format("2006/01/02 15:04:05")
+	s = fmt.Sprintf("%s [%s] %s", timestamp, relativeTime, s)
+	return cl.Logger.Output(calldepth+1, s)
 }
 
 func NewCustomLogger(out io.Writer, flag int, startTime time.Time) *CustomLogger {
@@ -49,7 +51,7 @@ func (fs *FileState) MonitorFile(logFilePath string, logger *CustomLogger) {
 	file, err := os.Open(logFilePath)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			logger.Printf("File error: %s - %s", logFilePath, err.Error())
+			logger.Output(2, fmt.Sprintf("File error: %s - %s", logFilePath, err.Error()))
 		}
 		return
 	}
@@ -57,7 +59,7 @@ func (fs *FileState) MonitorFile(logFilePath string, logger *CustomLogger) {
 
 	fileInfo, err := file.Stat()
 	if err != nil {
-		logger.Printf("Stat error: %s - %s", logFilePath, err.Error())
+		logger.Output(2, fmt.Sprintf("Stat error: %s - %s", logFilePath, err.Error()))
 		return
 	}
 
@@ -67,7 +69,7 @@ func (fs *FileState) MonitorFile(logFilePath string, logger *CustomLogger) {
 
 	_, err = file.Seek(fs.LastPos, 0)
 	if err != nil {
-		logger.Printf("Seek error: %s - %s", logFilePath, err.Error())
+		logger.Output(2, fmt.Sprintf("Seek error: %s - %s", logFilePath, err.Error()))
 		return
 	}
 
@@ -76,15 +78,15 @@ func (fs *FileState) MonitorFile(logFilePath string, logger *CustomLogger) {
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			if err != io.EOF {
-				logger.Printf("Read error: %s - %s", logFilePath, err.Error())
+				logger.Output(2, fmt.Sprintf("Read error: %s - %s", logFilePath, err.Error()))
 			}
 			break
 		}
 		line = strings.TrimSpace(line)
-		logger.Printf("%s - %s", logFilePath, line)
+		logger.Output(2, fmt.Sprintf("%s - %s", logFilePath, line))
 		fs.LastPos, err = file.Seek(0, io.SeekCurrent)
 		if err != nil {
-			logger.Printf("Seek error: %s - %s", logFilePath, err.Error())
+			logger.Output(2, fmt.Sprintf("Seek error: %s - %s", logFilePath, err.Error()))
 			break
 		}
 	}
