@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"flag"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -14,23 +15,41 @@ import (
 var logFilePath = flag.String("path", "/var/log/cloud-init-output.log", "Path to the log file")
 
 type FileState struct {
-	LastPos  int64
-	Mux      sync.Mutex
+	LastPos   int64
+	Mux       sync.Mutex
 	StartTime time.Time
+}
+
+type CustomLogger struct {
+	*log.Logger
+	StartTime time.Time
+}
+
+func (cl *CustomLogger) Printf(format string, v ...interface{}) {
+	relativeTime := time.Since(cl.StartTime).Round(time.Second)
+	newFormat := fmt.Sprintf("%s - %s", relativeTime, format)
+	cl.Logger.Printf(newFormat, v...)
+}
+
+func NewCustomLogger(out io.Writer, flag int, startTime time.Time) *CustomLogger {
+	return &CustomLogger{
+		Logger:    log.New(out, "", flag),
+		StartTime: startTime,
+	}
 }
 
 func init() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 }
 
-func (fs *FileState) MonitorFile(logFilePath string) {
+func (fs *FileState) MonitorFile(logFilePath string, logger *CustomLogger) {
 	fs.Mux.Lock()
 	defer fs.Mux.Unlock()
 
 	file, err := os.Open(logFilePath)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			log.Printf("File error: %s - %s", logFilePath, err.Error())
+			logger.Printf("File error: %s - %s", logFilePath, err.Error())
 		}
 		return
 	}
@@ -38,7 +57,7 @@ func (fs *FileState) MonitorFile(logFilePath string) {
 
 	fileInfo, err := file.Stat()
 	if err != nil {
-		log.Printf("Stat error: %s - %s", logFilePath, err.Error())
+		logger.Printf("Stat error: %s - %s", logFilePath, err.Error())
 		return
 	}
 
@@ -48,7 +67,7 @@ func (fs *FileState) MonitorFile(logFilePath string) {
 
 	_, err = file.Seek(fs.LastPos, 0)
 	if err != nil {
-		log.Printf("Seek error: %s - %s", logFilePath, err.Error())
+		logger.Printf("Seek error: %s - %s", logFilePath, err.Error())
 		return
 	}
 
@@ -57,16 +76,15 @@ func (fs *FileState) MonitorFile(logFilePath string) {
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			if err != io.EOF {
-				log.Printf("Read error: %s - %s", logFilePath, err.Error())
+				logger.Printf("Read error: %s - %s", logFilePath, err.Error())
 			}
 			break
 		}
-		relativeTime := time.Since(fs.StartTime).Round(time.Second)
 		line = strings.TrimSpace(line)
-		log.Printf("%s - %s - Relative Time: %s", logFilePath, relativeTime ,line )
+		logger.Printf("%s - %s", logFilePath, line)
 		fs.LastPos, err = file.Seek(0, io.SeekCurrent)
 		if err != nil {
-			log.Printf("Seek error: %s - %s", logFilePath, err.Error())
+			logger.Printf("Seek error: %s - %s", logFilePath, err.Error())
 			break
 		}
 	}
@@ -75,12 +93,14 @@ func (fs *FileState) MonitorFile(logFilePath string) {
 func main() {
 	flag.Parse()
 	ticker := time.NewTicker(500 * time.Millisecond)
+	startTime := time.Now()
 	fileState := &FileState{
-		StartTime: time.Now(),
+		StartTime: startTime,
 	}
+	logger := NewCustomLogger(os.Stdout, log.LstdFlags|log.Lshortfile, startTime)
 	go func() {
 		for range ticker.C {
-			fileState.MonitorFile(*logFilePath)
+			fileState.MonitorFile(*logFilePath, logger)
 		}
 	}()
 
