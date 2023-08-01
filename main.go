@@ -21,19 +21,6 @@ func init() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 }
 
-func main() {
-	flag.Parse()
-	ticker := time.NewTicker(500 * time.Millisecond)
-	fileState := &FileState{}
-	go func() {
-		for range ticker.C {
-			fileState.MonitorFile(*logFilePath)
-		}
-	}()
-
-	select {}
-}
-
 func (fs *FileState) MonitorFile(logFilePath string) {
 	fs.Mux.Lock()
 	defer fs.Mux.Unlock()
@@ -79,4 +66,17 @@ func (fs *FileState) MonitorFile(logFilePath string) {
 			break
 		}
 	}
+}
+
+func main() {
+	flag.Parse()
+	ticker := time.NewTicker(500 * time.Millisecond)
+	fileState := &FileState{}
+	go func() {
+		for range ticker.C {
+			fileState.MonitorFile(*logFilePath)
+		}
+	}()
+
+	select {}
 }
